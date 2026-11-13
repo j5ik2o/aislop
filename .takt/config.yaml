@@ -1,0 +1,24 @@
+language: ja
+# 全体で同時 2 本まで
+concurrency: 2
+base_branch: main
+
+# provider が rate limit に達したときの切替先（順に試す）。同格のクラウド provider に
+# 限る。chain が尽きた run は失敗で止まり、成果は .takt/runs/ と作業ツリーに残る
+rate_limit_fallback:
+  switch_chain:
+    - provider: claude
+    - provider: opencode
+      model: ollama/glm-5.3:cloud
+
+# ワークフロー内の system step が固定コマンド（検証の三点）を実行するために必要
+workflow_system_commands:
+  custom_scripts: true
+
+# manager（ゴール管理）がタスクに使ってよいワークフロー。未設定だと default と simple
+# だけになる
+manager:
+  workflows:
+    - default
+    - simple
+    - aislop-change: aislop の変更作業（計画・実装・レビュー・修正）の標準ワークフロー

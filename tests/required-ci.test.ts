@@ -10,6 +10,8 @@ const workflow = YAML.parse(readFileSync(workflowUrl, "utf-8")) as {
 const [gate] = workflow.jobs.required.steps;
 
 const passingResults = {
+	CHECKOUT_RESULT: "success",
+	CHECKOUT_SHA: "a".repeat(40),
 	CI_RESULT: "success",
 	CI_PASSED: "true",
 	AISLOP_RESULT: "success",
@@ -39,10 +41,15 @@ describe("Required CI (main)", () => {
 	it.each(["failure", "cancelled", "skipped", "neutral", "unknown", "", undefined])(
 		"blocks either workflow with result %s",
 		(result) => {
+			expect(runGate({ ...passingResults, CHECKOUT_RESULT: result })).toBe(1);
 			expect(runGate({ ...passingResults, CI_RESULT: result })).toBe(1);
 			expect(runGate({ ...passingResults, AISLOP_RESULT: result })).toBe(1);
 		},
 	);
+
+	it.each(["", "unknown", undefined])("blocks an invalid checkout SHA %s", (sha) => {
+		expect(runGate({ ...passingResults, CHECKOUT_SHA: sha })).toBe(1);
+	});
 
 	it.each(["false", "unknown", "", undefined])(
 		"blocks either workflow with completion output %s even on success",

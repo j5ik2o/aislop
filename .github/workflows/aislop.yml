@@ -5,6 +5,10 @@ on:
     branches-ignore: [main]
     types: [opened, synchronize, reopened, edited]
   workflow_call:
+    inputs:
+      checkout-ref:
+        description: Verified PR merge commit to check out
+        type: string
     outputs:
       passed:
         description: Whether every aislop job succeeded
@@ -15,11 +19,23 @@ permissions:
   contents: read
 
 jobs:
+  checkout:
+    name: Resolve retargeted PR checkout
+    if: github.event.action == 'edited' && inputs.checkout-ref == ''
+    uses: ./.github/workflows/ci-checkout.yml
+
   scan-smoke:
     name: Scan smoke
+    needs: checkout
+    if: &valid-checkout >-
+      ${{ !cancelled() &&
+          (github.event.action != 'edited' || inputs.checkout-ref != '' ||
+           (needs.checkout.result == 'success' && needs.checkout.outputs.sha != '')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.checkout-ref || needs.checkout.outputs.sha }}
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.0.0
 
@@ -38,27 +54,40 @@ jobs:
 
   default-latest-json:
     name: Action smoke (default-latest-json)
+    needs: checkout
+    if: *valid-checkout
     uses: ./.github/workflows/ci-action-smoke.yml
     with:
+      checkout-ref: ${{ inputs.checkout-ref || needs.checkout.outputs.sha }}
       case: default-latest-json
 
   explicit-latest-human:
     name: Action smoke (explicit-latest-human)
+    needs: checkout
+    if: *valid-checkout
     uses: ./.github/workflows/ci-action-smoke.yml
     with:
+      checkout-ref: ${{ inputs.checkout-ref || needs.checkout.outputs.sha }}
       case: explicit-latest-human
 
   pinned-current-json:
     name: Action smoke (pinned-current-json)
+    needs: checkout
+    if: *valid-checkout
     uses: ./.github/workflows/ci-action-smoke.yml
     with:
+      checkout-ref: ${{ inputs.checkout-ref || needs.checkout.outputs.sha }}
       case: pinned-current-json
 
   quality-gate:
     name: Smoke workflow quality gate
+    needs: checkout
+    if: *valid-checkout
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.checkout-ref || needs.checkout.outputs.sha }}
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.0.0
 

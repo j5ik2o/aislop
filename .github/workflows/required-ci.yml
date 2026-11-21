@@ -10,32 +10,48 @@ permissions:
   contents: read
 
 jobs:
+  checkout:
+    name: Resolve PR checkout
+    uses: ./.github/workflows/ci-checkout.yml
+
   ci:
     name: CI
+    needs: checkout
+    if: needs.checkout.outputs.sha != ''
     uses: ./.github/workflows/ci.yml
+    with:
+      checkout-ref: ${{ needs.checkout.outputs.sha }}
 
   aislop:
     name: aislop
+    needs: checkout
+    if: needs.checkout.outputs.sha != ''
     uses: ./.github/workflows/aislop.yml
+    with:
+      checkout-ref: ${{ needs.checkout.outputs.sha }}
 
   required:
     name: Required CI (main)
-    needs: [ci, aislop]
+    needs: [checkout, ci, aislop]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Require both workflows and every required job to pass
         shell: node {0}
         env:
+          CHECKOUT_RESULT: ${{ needs.checkout.result }}
+          CHECKOUT_SHA: ${{ needs.checkout.outputs.sha }}
           CI_RESULT: ${{ needs.ci.result }}
           CI_PASSED: ${{ needs.ci.outputs.passed }}
           AISLOP_RESULT: ${{ needs.aislop.result }}
           AISLOP_PASSED: ${{ needs.aislop.outputs.passed }}
         run: |
-          const { CI_RESULT, CI_PASSED, AISLOP_RESULT, AISLOP_PASSED } = process.env;
+          const { CHECKOUT_RESULT, CHECKOUT_SHA, CI_RESULT, CI_PASSED, AISLOP_RESULT, AISLOP_PASSED } = process.env;
+          console.log("Verified checkout:", { result: CHECKOUT_RESULT, sha: CHECKOUT_SHA });
           console.log("CI:", { result: CI_RESULT, passed: CI_PASSED });
           console.log("aislop:", { result: AISLOP_RESULT, passed: AISLOP_PASSED });
-          if (CI_RESULT !== "success" || CI_PASSED !== "true" ||
+          if (CHECKOUT_RESULT !== "success" || !/^[0-9a-f]{40}$/.test(CHECKOUT_SHA ?? "") ||
+              CI_RESULT !== "success" || CI_PASSED !== "true" ||
               AISLOP_RESULT !== "success" || AISLOP_PASSED !== "true") {
             process.exitCode = 1;
           }

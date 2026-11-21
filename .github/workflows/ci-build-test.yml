@@ -19,7 +19,6 @@ permissions:
 jobs:
   run:
     name: Run
-    timeout-minutes: ${{ (inputs.os == 'ubuntu-latest' && inputs.node-version == 22) && 1 || 360 }}
     runs-on: ${{ inputs.os }}
 
     outputs:
@@ -27,7 +26,7 @@ jobs:
     steps:
       - name: Temporary verification condition
         if: ${{ inputs.os == 'ubuntu-latest' && inputs.node-version == 22 }}
-        run: sleep 90
+        run: exit 27
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

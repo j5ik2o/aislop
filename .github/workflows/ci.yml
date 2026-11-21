@@ -22,7 +22,6 @@ permissions:
 
 jobs:
   test-ubuntu-22:
-    if: ${{ false }}
     name: Build & test (ubuntu-latest, 22)
     uses: ./.github/workflows/ci-build-test.yml
     with:

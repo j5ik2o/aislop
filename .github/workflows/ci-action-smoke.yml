@@ -1,0 +1,62 @@
+name: CI action smoke
+on:
+  workflow_call:
+    outputs:
+      passed:
+        description: Whether the runner reached its final step
+        value: ${{ jobs.run.outputs.passed }}
+    inputs:
+      case:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: Run
+    runs-on: ubuntu-latest
+    outputs:
+      passed: ${{ steps.complete.outputs.passed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create clean fixture
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/aislop-action-fixture"
+          cat > "$RUNNER_TEMP/aislop-action-fixture/package.json" <<'JSON'
+          {"type":"module"}
+          JSON
+          cat > "$RUNNER_TEMP/aislop-action-fixture/index.ts" <<'TS'
+          export const add = (left: number, right: number): number => left + right;
+          TS
+
+      - name: Default latest JSON
+        if: inputs.case == 'default-latest-json'
+        uses: ./
+        with:
+          directory: ${{ runner.temp }}/aislop-action-fixture
+
+      - name: Explicit latest human
+        if: inputs.case == 'explicit-latest-human'
+        uses: ./
+        with:
+          directory: ${{ runner.temp }}/aislop-action-fixture
+          format: human
+          node-version: "22"
+          version: "latest"
+
+      - name: Pinned current JSON
+        if: inputs.case == 'pinned-current-json'
+        uses: ./
+        with:
+          directory: ${{ runner.temp }}/aislop-action-fixture
+          # Keep this on the latest already-published npm version; release PRs run before the new npm package exists.
+          version: "0.11.0"
+
+      - name: Record successful completion
+        id: complete
+        shell: bash
+        run: echo "passed=true" >> "$GITHUB_OUTPUT"

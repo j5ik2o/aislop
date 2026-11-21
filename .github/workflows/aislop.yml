@@ -3,6 +3,7 @@ name: aislop
 on:
   pull_request:
     branches-ignore: [main]
+    types: [opened, synchronize, reopened, edited]
   workflow_call:
     outputs:
       passed:

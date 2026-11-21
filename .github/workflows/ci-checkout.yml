@@ -1,0 +1,59 @@
+name: Resolve PR checkout
+
+on:
+  workflow_call:
+    outputs:
+      sha:
+        description: Test merge commit with the event's base and head as parents
+        value: ${{ jobs.resolve.outputs.sha }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Verify test merge parents
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.verify.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/pull/${{ github.event.number }}/merge
+          persist-credentials: false
+
+      - name: Resolve the test merge for this PR event
+        id: verify
+        shell: bash
+        env:
+          ACTION: ${{ github.event.action }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_REF: refs/pull/${{ github.event.number }}/merge
+        run: |
+          echo "PR action: $ACTION, target: $BASE_REF"
+          echo "Expected parents: ${BASE_SHA:?} ${HEAD_SHA:?}"
+
+          candidate=HEAD
+          for attempt in {1..6}; do
+            sha=$(git rev-parse "$candidate")
+            # Read parents from the commit header, including for a shallow fetch.
+            parents=$(git cat-file -p "$sha" | sed -n '1,/^$/s/^parent //p')
+            printf 'Candidate %s with parents:\n%s\n' "$sha" "$parents"
+            if [[ "$parents" == "$BASE_SHA"$'\n'"$HEAD_SHA" ]]; then
+              echo "sha=$sha" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            if [[ "$attempt" != 6 ]]; then
+              sleep 5
+              # The pull ref can still point to the previous base just after retargeting.
+              if git fetch --no-tags --depth=1 origin "$MERGE_REF"; then
+                candidate=FETCH_HEAD
+              fi
+            fi
+          done
+
+          echo "::error::No test merge matched the PR event base and head"
+          exit 1

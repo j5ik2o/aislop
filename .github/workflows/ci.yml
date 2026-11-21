@@ -5,7 +5,12 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [develop]
+    types: [opened, synchronize, reopened, edited]
   workflow_call:
+    inputs:
+      checkout-ref:
+        description: Verified PR merge commit to check out
+        type: string
     outputs:
       passed:
         description: Whether every CI job succeeded
@@ -21,31 +26,51 @@ permissions:
   contents: read
 
 jobs:
+  checkout:
+    name: Resolve retargeted PR checkout
+    if: github.event.action == 'edited' && inputs.checkout-ref == ''
+    uses: ./.github/workflows/ci-checkout.yml
+
   test-ubuntu-22:
     name: Build & test (ubuntu-latest, 22)
+    needs: checkout
+    if: &valid-checkout >-
+      ${{ !cancelled() &&
+          (github.event.action != 'edited' || inputs.checkout-ref != '' ||
+           (needs.checkout.result == 'success' && needs.checkout.outputs.sha != '')) }}
     uses: ./.github/workflows/ci-build-test.yml
     with:
+      checkout-ref: ${{ inputs.checkout-ref || needs.checkout.outputs.sha }}
       os: ubuntu-latest
       node-version: 22
 
   test-ubuntu-24:
     name: Build & test (ubuntu-latest, 24)
+    needs: checkout
+    if: *valid-checkout
     uses: ./.github/workflows/ci-build-test.yml
     with:
+      checkout-ref: ${{ inputs.checkout-ref || needs.checkout.outputs.sha }}
       os: ubuntu-latest
       node-version: 24
 
   test-windows-22:
     name: Build & test (windows-latest, 22)
+    needs: checkout
+    if: *valid-checkout
     uses: ./.github/workflows/ci-build-test.yml
     with:
+      checkout-ref: ${{ inputs.checkout-ref || needs.checkout.outputs.sha }}
       os: windows-latest
       node-version: 22
 
   test-windows-24:
     name: Build & test (windows-latest, 24)
+    needs: checkout
+    if: *valid-checkout
     uses: ./.github/workflows/ci-build-test.yml
     with:
+      checkout-ref: ${{ inputs.checkout-ref || needs.checkout.outputs.sha }}
       os: windows-latest
       node-version: 24
 
@@ -79,10 +104,13 @@ jobs:
 
   quality-gate:
     name: CI quality gate
-    needs: check
+    needs: [checkout, check]
+    if: ${{ !cancelled() && needs.check.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.checkout-ref || needs.checkout.outputs.sha }}
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.0.0
 
@@ -102,10 +130,13 @@ jobs:
 
   dotnet-lint:
     name: C# lint integration
-    needs: check
+    needs: [checkout, check]
+    if: ${{ !cancelled() && needs.check.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.checkout-ref || needs.checkout.outputs.sha }}
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.0.0
 

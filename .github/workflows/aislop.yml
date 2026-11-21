@@ -2,6 +2,12 @@ name: aislop
 
 on:
   pull_request:
+    branches-ignore: [main]
+  workflow_call:
+    outputs:
+      passed:
+        description: Whether every aislop job succeeded
+        value: ${{ jobs.verify.outputs.passed }}
   workflow_dispatch:
 
 permissions:
@@ -29,55 +35,26 @@ jobs:
 
       - run: node dist/cli.js scan .
 
-  action-smoke:
-    name: Action smoke (${{ matrix.case }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - case: default-latest-json
-          - case: explicit-latest-human
-          - case: pinned-current-json
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  default-latest-json:
+    name: Action smoke (default-latest-json)
+    uses: ./.github/workflows/ci-action-smoke.yml
+    with:
+      case: default-latest-json
 
-      - name: Create clean fixture
-        shell: bash
-        run: |
-          mkdir -p "$RUNNER_TEMP/aislop-action-fixture"
-          cat > "$RUNNER_TEMP/aislop-action-fixture/package.json" <<'JSON'
-          {"type":"module"}
-          JSON
-          cat > "$RUNNER_TEMP/aislop-action-fixture/index.ts" <<'TS'
-          export const add = (left: number, right: number): number => left + right;
-          TS
+  explicit-latest-human:
+    name: Action smoke (explicit-latest-human)
+    uses: ./.github/workflows/ci-action-smoke.yml
+    with:
+      case: explicit-latest-human
 
-      - name: Default latest JSON
-        if: matrix.case == 'default-latest-json'
-        uses: ./
-        with:
-          directory: ${{ runner.temp }}/aislop-action-fixture
-
-      - name: Explicit latest human
-        if: matrix.case == 'explicit-latest-human'
-        uses: ./
-        with:
-          directory: ${{ runner.temp }}/aislop-action-fixture
-          format: human
-          node-version: "22"
-          version: "latest"
-
-      - name: Pinned current JSON
-        if: matrix.case == 'pinned-current-json'
-        uses: ./
-        with:
-          directory: ${{ runner.temp }}/aislop-action-fixture
-          # Keep this on the latest already-published npm version; release PRs run before the new npm package exists.
-          version: "0.11.0"
+  pinned-current-json:
+    name: Action smoke (pinned-current-json)
+    uses: ./.github/workflows/ci-action-smoke.yml
+    with:
+      case: pinned-current-json
 
   quality-gate:
-    name: Quality gate
+    name: Smoke workflow quality gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -96,3 +73,23 @@ jobs:
         run: pnpm build
 
       - run: node dist/cli.js ci .
+
+  verify:
+    name: Verify aislop results
+    needs: [default-latest-json, explicit-latest-human, pinned-current-json, scan-smoke, quality-gate]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    outputs:
+      passed: ${{ steps.verify.outputs.passed }}
+    steps:
+      - name: Require each job to succeed
+        id: verify
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          jq -e '
+            all(.["default-latest-json"], .["explicit-latest-human"], .["pinned-current-json"];
+                .result == "success" and .outputs.passed == "true")
+            and all(.["scan-smoke"], .["quality-gate"]; .result == "success")
+          ' <<< "$RESULTS"
+          echo "passed=true" >> "$GITHUB_OUTPUT"

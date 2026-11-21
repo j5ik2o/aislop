@@ -1,0 +1,37 @@
+name: Main PR CI
+
+on:
+  pull_request:
+    branches: [main]
+    # A base-branch edit must produce CI even when the head SHA is unchanged.
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  aislop:
+    name: aislop
+    uses: ./.github/workflows/aislop.yml
+
+  required:
+    name: Required CI (main)
+    needs: [ci, aislop]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both workflows and every required job to pass
+        env:
+          CI_RESULT: ${{ needs.ci.result }}
+          CI_PASSED: ${{ needs.ci.outputs.passed }}
+          AISLOP_RESULT: ${{ needs.aislop.result }}
+          AISLOP_PASSED: ${{ needs.aislop.outputs.passed }}
+        run: |
+          echo "CI: result=$CI_RESULT, all jobs passed=$CI_PASSED"
+          echo "aislop: result=$AISLOP_RESULT, all jobs passed=$AISLOP_PASSED"
+          [[ "$CI_RESULT" == success && "$CI_PASSED" == true &&
+             "$AISLOP_RESULT" == success && "$AISLOP_PASSED" == true ]]

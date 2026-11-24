@@ -530,3 +530,4 @@ Auto-updated by `.github/workflows/contributors.yml`. [Link commit email](https:
 ## License
 
 [MIT](LICENSE)
+<!-- Temporary documentation-only check of Required CI (main) after PR #10. -->

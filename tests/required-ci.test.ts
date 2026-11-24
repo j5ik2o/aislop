@@ -34,6 +34,14 @@ function runGate(results: Record<string, string | undefined>) {
 }
 
 describe("Required CI (main)", () => {
+	it("starts checkout verification from the event commit before resolving a moving merge ref", () => {
+		const checkoutUrl = new URL("../.github/workflows/ci-checkout.yml", import.meta.url);
+		const checkoutWorkflow = YAML.parse(readFileSync(checkoutUrl, "utf-8")) as {
+			jobs: { resolve: { steps: Array<{ with?: { ref?: string } }> } };
+		};
+		expect(checkoutWorkflow.jobs.resolve.steps[0]?.with?.ref).toBe("${{ github.sha }}");
+	});
+
 	it("passes when both workflows completed every required job", () => {
 		expect(runGate(passingResults)).toBe(0);
 	});

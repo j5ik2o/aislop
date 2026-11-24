@@ -22,11 +22,8 @@ type Workflow = {
 	jobs?: Record<
 		string,
 		{
-			strategy?: {
-				matrix?: {
-					include?: Array<{ case?: unknown }>;
-				};
-			};
+			uses?: unknown;
+			with?: Record<string, unknown>;
 			steps?: Array<{
 				name?: unknown;
 				uses?: unknown;
@@ -54,14 +51,19 @@ describe("GitHub action manifest", () => {
 	});
 
 	it("exercises default, latest, and pinned action modes in CI", () => {
+		const smokeWorkflowPath = ".github/workflows/ci-action-smoke.yml";
 		const workflow = YAML.parse(
 			fs.readFileSync(path.join(rootDir, ".github/workflows/aislop.yml"), "utf-8"),
 		) as Workflow;
-		const actionSmoke = workflow.jobs?.["action-smoke"];
-		const cases = actionSmoke?.strategy?.matrix?.include?.map((item) => item.case);
+		const cases = Object.values(workflow.jobs ?? {})
+			.filter((job) => job.uses === `./${smokeWorkflowPath}`)
+			.map((job) => job.with?.case);
 		expect(cases).toEqual(["default-latest-json", "explicit-latest-human", "pinned-current-json"]);
 
-		const steps = actionSmoke?.steps ?? [];
+		const smokeWorkflow = YAML.parse(
+			fs.readFileSync(path.join(rootDir, smokeWorkflowPath), "utf-8"),
+		) as Workflow;
+		const steps = smokeWorkflow.jobs?.run?.steps ?? [];
 
 		const defaultStep = steps.find((step) => step.name === "Default latest JSON");
 		expect(defaultStep?.uses).toBe("./");

@@ -4,7 +4,17 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [develop]
+    types: [opened, synchronize, reopened, edited]
+  workflow_call:
+    inputs:
+      verified-revision:
+        description: Verified PR merge commit to check out
+        type: string
+    outputs:
+      passed:
+        description: Whether every CI job succeeded
+        value: ${{ jobs.verify.outputs.passed }}
   workflow_dispatch:
     inputs:
       ref:
@@ -16,37 +26,53 @@ permissions:
   contents: read
 
 jobs:
-  test-matrix:
-    name: Build & test (${{ matrix.os }}, ${{ matrix.node-version }})
-    runs-on: ${{ matrix.os }}
+  checkout:
+    name: Resolve retargeted PR checkout
+    if: github.event_name == 'pull_request' && github.event.action == 'edited' && inputs.verified-revision == ''
+    uses: ./.github/workflows/ci-checkout.yml
 
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        node-version: [22, 24]
+  test-ubuntu-22:
+    name: Build & test (ubuntu-latest, 22)
+    needs: checkout
+    if: &valid-checkout >-
+      ${{ !cancelled() &&
+          (github.event.action != 'edited' || inputs.verified-revision != '' ||
+           (needs.checkout.result == 'success' && needs.checkout.outputs.revision != '')) }}
+    uses: ./.github/workflows/ci-build-test.yml
+    with:
+      verified-revision: ${{ inputs.verified-revision || needs.checkout.outputs.revision }}
+      os: ubuntu-latest
+      node-version: 22
 
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  test-ubuntu-24:
+    name: Build & test (ubuntu-latest, 24)
+    needs: checkout
+    if: *valid-checkout
+    uses: ./.github/workflows/ci-build-test.yml
+    with:
+      verified-revision: ${{ inputs.verified-revision || needs.checkout.outputs.revision }}
+      os: ubuntu-latest
+      node-version: 24
 
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.0.0
+  test-windows-22:
+    name: Build & test (windows-latest, 22)
+    needs: checkout
+    if: *valid-checkout
+    uses: ./.github/workflows/ci-build-test.yml
+    with:
+      verified-revision: ${{ inputs.verified-revision || needs.checkout.outputs.revision }}
+      os: windows-latest
+      node-version: 22
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Build
-        run: pnpm build
-
-      - name: Test
-        run: pnpm vitest run
+  test-windows-24:
+    name: Build & test (windows-latest, 24)
+    needs: checkout
+    if: *valid-checkout
+    uses: ./.github/workflows/ci-build-test.yml
+    with:
+      verified-revision: ${{ inputs.verified-revision || needs.checkout.outputs.revision }}
+      os: windows-latest
+      node-version: 24
 
   # Stable required-check names. Branch protection matches status checks by exact string, so
   # "Build & test (22)" and "Build & test (24)" must keep those names; we expose them as thin
@@ -56,7 +82,7 @@ jobs:
   # in branch protection, which would let a red matrix merge.
   check:
     name: Build & test
-    needs: test-matrix
+    needs: [test-ubuntu-22, test-ubuntu-24, test-windows-22, test-windows-24]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     strategy:
@@ -64,19 +90,29 @@ jobs:
         node-version: [22, 24]
     steps:
       - name: Require the OS/node test matrix to pass
+        env:
+          RESULTS: >-
+            ${{ needs.test-ubuntu-22.result }}
+            ${{ needs.test-ubuntu-24.result }}
+            ${{ needs.test-windows-22.result }}
+            ${{ needs.test-windows-24.result }}
         run: |
-          if [ "${{ needs.test-matrix.result }}" != "success" ]; then
-            echo "Build & test matrix did not pass: ${{ needs.test-matrix.result }}"
+          if [[ "$RESULTS" != "success success success success" ]]; then
+            echo "Build & test results: $RESULTS"
             exit 1
           fi
-          echo "All Build & test matrix legs passed."
 
   quality-gate:
-    name: Quality gate
-    needs: check
+    name: CI quality gate
+    needs: [checkout, check]
+    if: ${{ !cancelled() && needs.check.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Only pull_request runs may select a verified test merge.
+          ref: ${{ github.event_name == 'pull_request' && (inputs.verified-revision || needs.checkout.outputs.revision) || github.sha }}
+          persist-credentials: false
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.0.0
 
@@ -96,10 +132,15 @@ jobs:
 
   dotnet-lint:
     name: C# lint integration
-    needs: check
+    needs: [checkout, check]
+    if: ${{ !cancelled() && needs.check.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Only pull_request runs may select a verified test merge.
+          ref: ${{ github.event_name == 'pull_request' && (inputs.verified-revision || needs.checkout.outputs.revision) || github.sha }}
+          persist-credentials: false
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.0.0
 
@@ -130,3 +171,23 @@ jobs:
           node dist/cli.js scan tests/fixtures/dotnet/sample-project --json > scan.json || true
           cat scan.json
           grep -q '"dotnet/' scan.json
+
+  verify:
+    name: Verify CI results
+    needs: [test-ubuntu-22, test-ubuntu-24, test-windows-22, test-windows-24, quality-gate, dotnet-lint]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    outputs:
+      passed: ${{ steps.verify.outputs.passed }}
+    steps:
+      - name: Require each job to succeed
+        id: verify
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          jq -e '
+            all(.["test-ubuntu-22"], .["test-ubuntu-24"], .["test-windows-22"], .["test-windows-24"];
+                .result == "success" and .outputs.passed == "true")
+            and all(.["quality-gate"], .["dotnet-lint"]; .result == "success")
+          ' <<< "$RESULTS"
+          echo "passed=true" >> "$GITHUB_OUTPUT"

@@ -9,6 +9,8 @@ on:
 permissions:
   contents: read
 
+cache-mode: read
+
 jobs:
   checkout:
     name: Resolve PR checkout
@@ -17,18 +19,18 @@ jobs:
   ci:
     name: CI
     needs: checkout
-    if: needs.checkout.outputs.sha != ''
+    if: needs.checkout.outputs.revision != ''
     uses: ./.github/workflows/ci.yml
     with:
-      checkout-ref: ${{ needs.checkout.outputs.sha }}
+      verified-revision: ${{ needs.checkout.outputs.revision }}
 
   aislop:
     name: aislop
     needs: checkout
-    if: needs.checkout.outputs.sha != ''
+    if: needs.checkout.outputs.revision != ''
     uses: ./.github/workflows/aislop.yml
     with:
-      checkout-ref: ${{ needs.checkout.outputs.sha }}
+      verified-revision: ${{ needs.checkout.outputs.revision }}
 
   required:
     name: Required CI (main)
@@ -40,7 +42,7 @@ jobs:
         shell: node {0}
         env:
           CHECKOUT_RESULT: ${{ needs.checkout.result }}
-          CHECKOUT_SHA: ${{ needs.checkout.outputs.sha }}
+          CHECKOUT_SHA: ${{ needs.checkout.outputs.revision }}
           CI_RESULT: ${{ needs.ci.result }}
           CI_PASSED: ${{ needs.ci.outputs.passed }}
           AISLOP_RESULT: ${{ needs.aislop.result }}

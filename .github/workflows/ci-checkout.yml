@@ -3,9 +3,9 @@ name: Resolve PR checkout
 on:
   workflow_call:
     outputs:
-      sha:
+      revision:
         description: Test merge commit with the event's base and head as parents
-        value: ${{ jobs.resolve.outputs.sha }}
+        value: ${{ jobs.resolve.outputs.revision }}
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ jobs:
     name: Verify test merge parents
     runs-on: ubuntu-latest
     outputs:
-      sha: ${{ steps.verify.outputs.sha }}
+      revision: ${{ steps.verify.outputs.revision }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,7 +55,7 @@ jobs:
                   exit 1
                 fi
               fi
-              echo "sha=$sha" >> "$GITHUB_OUTPUT"
+              echo "revision=$sha" >> "$GITHUB_OUTPUT"
               exit 0
             fi
 

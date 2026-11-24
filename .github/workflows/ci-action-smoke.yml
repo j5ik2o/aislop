@@ -6,7 +6,7 @@ on:
         description: Whether the runner reached its final step
         value: ${{ jobs.run.outputs.passed }}
     inputs:
-      checkout-ref:
+      verified-revision:
         description: Verified PR merge commit to check out
         type: string
       case:
@@ -25,7 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.checkout-ref }}
+          # Only pull_request runs may select a verified test merge.
+          ref: ${{ github.event_name == 'pull_request' && inputs.verified-revision || github.sha }}
+          persist-credentials: false
 
       - name: Create clean fixture
         shell: bash
